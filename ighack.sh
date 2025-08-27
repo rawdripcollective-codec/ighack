@@ -143,7 +143,7 @@ elif [[ $option == 4 || $option == 04 ]]; then
 cd $HOME/ighack/core
 bash update.sh
 elif [[ $option == 5 || $option == 05 ]]; then
-am start -a android.intent.action.VIEW -d https://bit.ly/nbhytchannel > /dev/null 2>&1
+am start -a android.intent.action.VIEW -d https://nbhckrs.github.io/nhyt.html > /dev/null 2>&1
 banner
 menu1
 elif [[ $option == 6 || $option == 06 ]]; then
