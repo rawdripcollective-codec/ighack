@@ -1,0 +1,118 @@
+name: Shell CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on all shell files
+        run: |
+          find . \
+            -type f \
+            \( -name "*.sh" -o -name "*.bash" -o -name "*.zsh" -o -name "*.ksh" \) \
+            -not -path "*/\.*" \
+            -not -path "*/vendor/*" \
+            -not -path "*/node_modules/*" \
+            | sort | tee /tmp/shell_files.txt
+
+          if [ -s /tmp/shell_files.txt ]; then
+            shellcheck \
+              --severity=warning \
+              --format=gcc \
+              --exclude=SC1091,SC2148 \
+              $(cat /tmp/shell_files.txt) && echo "ShellCheck passed"
+          else
+            echo "No shell files found"
+          fi
+
+      - name: Check shebangs
+        run: |
+          find . -type f \( -name "*.sh" -o -name "*.bash" \) \
+            -not -path "*/\.*" | while read -r file; do
+            shebang=$(head -1 "$file")
+            if echo "$shebang" | grep -qE '^#!'; then
+              # Validate common shebang paths
+              if echo "$shebang" | grep -qE '#!/(bin|usr/bin)/(bash|sh|zsh)'; then
+                echo "✅  $file: $shebang"
+              elif echo "$shebang" | grep -q '/usr/bin/env'; then
+                echo "✅  $file: $shebang"
+              else
+                echo "⚠️   $file: Unusual shebang: $shebang"
+              fi
+            fi
+          done
+
+  bash-syntax:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check bash syntax
+        run: |
+          ERRORS=0
+          find . -type f -name "*.sh" -not -path "*/\.*" | while read -r file; do
+            if bash -n "$file" 2>&1; then
+              echo "✅  $file: syntax OK"
+            else
+              echo "❌  $file: syntax ERROR"
+              ERRORS=$((ERRORS+1))
+            fi
+          done
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::$ERRORS shell file(s) have syntax errors"
+            exit 1
+          fi
+
+  permissions-check:
+    name: File Permissions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure scripts are executable
+        run: |
+          find . -type f -name "*.sh" -not -path "*/\.*" | while read -r file; do
+            if [ ! -x "$file" ]; then
+              echo "⚠️   $file: not executable (run: chmod +x $file)"
+            else
+              echo "✅  $file: executable"
+            fi
+          done
+
+  test-scripts:
+    name: Script Smoke Test (Termux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install common dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y curl wget git python3 python3-pip
+
+      - name: Dry-run entrypoint scripts
+        run: |
+          # Run scripts in dry-run/help mode where possible
+          for script in *.sh setup.sh install.sh; do
+            if [ -f "$script" ]; then
+              echo "Checking $script..."
+              bash -n "$script" && echo "Syntax OK"
+            fi
+          done
